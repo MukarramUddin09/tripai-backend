@@ -32,7 +32,22 @@ export function createApp() {
   app.use(helmet());
   app.use(
     cors({
-      origin: env.frontendOrigin,
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        const allowed = [
+          env.frontendOrigin,
+          'http://localhost:5173',
+          'http://localhost:8080',
+          'http://localhost:8081',
+          'http://127.0.0.1:5173',
+          'http://127.0.0.1:8080',
+          'http://127.0.0.1:8081',
+        ];
+        if (allowed.includes(origin) || /^http:\/\/192\.168\.\d+\.\d+:(5173|8080|8081)$/.test(origin)) {
+          return callback(null, true);
+        }
+        callback(new Error(`CORS blocked: ${origin}`));
+      },
       credentials: true,
     }),
   );

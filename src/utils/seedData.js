@@ -6,7 +6,15 @@
 import Hotel from '../models/Hotel.js';
 import Entertainment from '../models/Entertainment.js';
 import ProviderRegistry from '../models/ProviderRegistry.js';
+import User from '../models/User.js';
 import logger from './logger.js';
+
+const DEMO_USER = {
+  name: 'Aarav Sharma',
+  email: 'demo@tripai.com',
+  password: 'demo123456',
+  phone: '9876543210',
+};
 
 const HOTEL_CITIES = [
   {
@@ -186,10 +194,27 @@ export async function seedProvidersIfEmpty() {
  * Runs all bootstrap seeders when collections are empty.
  * @returns {Promise<void>}
  */
+/**
+ * Creates demo user for frontend auto-login if missing.
+ * @returns {Promise<number>}
+ */
+export async function seedDemoUserIfEmpty() {
+  const exists = await User.findOne({ email: DEMO_USER.email });
+  if (exists) return 0;
+  await User.create(DEMO_USER);
+  logger.info('[Bootstrap] Demo user created (demo@tripai.com / demo123456)');
+  return 1;
+}
+
+/**
+ * Runs all bootstrap seeders when collections are empty.
+ * @returns {Promise<void>}
+ */
 export async function runBootstrap() {
   await Promise.all([
     seedHotelsIfEmpty(),
     seedEntertainmentIfEmpty(),
     seedProvidersIfEmpty(),
+    seedDemoUserIfEmpty(),
   ]);
 }
