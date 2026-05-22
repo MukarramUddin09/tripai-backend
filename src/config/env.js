@@ -45,8 +45,11 @@ const DEV_ORIGINS = [
   'http://127.0.0.1:8081',
 ];
 
-/** Always allow the deployed Vercel app in production */
-const PRODUCTION_ORIGINS = ['https://trip-frontend1.vercel.app'];
+/** Always allow deployed Vercel frontends in production. */
+const PRODUCTION_ORIGINS = [
+  'https://trip-frontend0.vercel.app',
+  'https://trip-frontend1.vercel.app',
+];
 
 const allowedOrigins = [
   ...new Set([

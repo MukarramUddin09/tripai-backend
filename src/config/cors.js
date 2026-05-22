@@ -6,7 +6,7 @@ import cors from 'cors';
 import { env } from './env.js';
 
 /** Production frontend deployed on Vercel */
-export const VERCEL_FRONTEND_ORIGIN = 'https://trip-frontend1.vercel.app';
+export const VERCEL_FRONTEND_ORIGIN = 'https://trip-frontend0.vercel.app';
 
 /**
  * Shared CORS options — credentials require a reflected origin (never "*").
@@ -21,6 +21,9 @@ export const corsOptions = {
       return callback(null, true);
     }
     if (env.allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    if (origin === VERCEL_FRONTEND_ORIGIN) {
       return callback(null, true);
     }
     if (env.isDevelopment && LAN_ORIGIN_RE.test(origin)) {
