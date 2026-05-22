@@ -1,19 +1,32 @@
 /**
- * Payment controller — initiate, verify, history, invoices, and direct UPI.
+ * Payment controller — Razorpay orders, verify, history, invoices, and direct UPI.
  */
 
+import crypto from 'crypto';
+import Razorpay from 'razorpay';
 import Payment from '../models/Payment.js';
 import Booking from '../models/Booking.js';
-import { mockCreatePaymentOrder } from '../utils/mockProviders.js';
+import { env } from '../config/env.js';
 import logger from '../utils/logger.js';
 import { AppError } from '../middlewares/errorHandler.middleware.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { DEFAULT_PAGE_SIZE } from '../config/constants.js';
 
 /**
- * POST /api/payments/initiate — Create payment record and mock Razorpay URL.
- * @param {import('express').Request} req - Express request
- * @param {import('express').Response} res - Express response
+ * @returns {import('razorpay').default}
+ */
+function getRazorpayClient() {
+  if (!env.razorpayKeyId || !env.razorpayKeySecret) {
+    throw new AppError('Payment gateway not configured', 503);
+  }
+  return new Razorpay({
+    key_id: env.razorpayKeyId,
+    key_secret: env.razorpayKeySecret,
+  });
+}
+
+/**
+ * POST /api/payments/initiate — Create Razorpay order and pending payment record.
  */
 export async function initiatePayment(req, res) {
   const { bookingId, amount, method, currency } = req.body;
@@ -21,7 +34,12 @@ export async function initiatePayment(req, res) {
   const booking = await Booking.findOne({ _id: bookingId, userId: req.user.userId });
   if (!booking) throw new AppError('Booking not found', 404);
 
-  const order = await mockCreatePaymentOrder(amount, currency);
+  const razorpay = getRazorpayClient();
+  const order = await razorpay.orders.create({
+    amount: Math.round(amount * 100),
+    currency: currency || 'INR',
+    receipt: `receipt_${Date.now()}`,
+  });
 
   const payment = await Payment.create({
     userId: req.user.userId,
@@ -30,34 +48,59 @@ export async function initiatePayment(req, res) {
     currency: currency || 'INR',
     method,
     status: 'pending',
-    providerRef: order.orderId,
+    providerRef: order.id,
   });
 
   sendSuccess(res, {
     statusCode: 201,
     message: 'Payment initiated',
-    data: { payment, paymentUrl: order.paymentUrl, order },
+    data: {
+      payment,
+      order: {
+        id: order.id,
+        amount: order.amount,
+        currency: order.currency,
+      },
+      razorpayKeyId: env.razorpayKeyId,
+    },
   });
 }
 
 /**
- * POST /api/payments/verify — Verify mock payment webhook.
- * @param {import('express').Request} req - Express request
- * @param {import('express').Response} res - Express response
+ * POST /api/payments/verify — Verify Razorpay signature and mark payment success.
  */
 export async function verifyPayment(req, res) {
-  const { paymentId, transactionId, status } = req.body;
+  const {
+    paymentId,
+    razorpay_order_id,
+    razorpay_payment_id,
+    razorpay_signature,
+  } = req.body;
 
   const payment = await Payment.findOne({ _id: paymentId, userId: req.user.userId });
   if (!payment) throw new AppError('Payment not found', 404);
 
-  payment.status = status === 'success' ? 'success' : 'failed';
-  payment.transactionId = transactionId || `txn_${Date.now()}`;
+  if (!env.razorpayKeySecret) {
+    throw new AppError('Payment gateway not configured', 503);
+  }
+
+  const body = `${razorpay_order_id}|${razorpay_payment_id}`;
+  const expected = crypto
+    .createHmac('sha256', env.razorpayKeySecret)
+    .update(body)
+    .digest('hex');
+
+  if (expected !== razorpay_signature) {
+    throw new AppError('Invalid payment signature', 400);
+  }
+
+  payment.status = 'success';
+  payment.transactionId = razorpay_payment_id;
   await payment.save();
 
   const booking = await Booking.findById(payment.bookingId);
   if (booking) {
-    booking.paymentStatus = payment.status === 'success' ? 'paid' : 'failed';
+    booking.paymentStatus = 'paid';
     await booking.save();
   }
 
@@ -66,8 +109,6 @@ export async function verifyPayment(req, res) {
 
 /**
  * GET /api/payments/history — User payment history with filters.
- * @param {import('express').Request} req - Express request
- * @param {import('express').Response} res - Express response
  */
 export async function getPaymentHistory(req, res) {
   const filter = { userId: req.user.userId };
@@ -88,8 +129,6 @@ export async function getPaymentHistory(req, res) {
 
 /**
  * POST /api/payments/generate-invoice — Build GST invoice JSON for PDF rendering.
- * @param {import('express').Request} req - Express request
- * @param {import('express').Response} res - Express response
  */
 export async function generateInvoice(req, res) {
   const { paymentId, gstin, buyerName } = req.body;
@@ -120,8 +159,6 @@ export async function generateInvoice(req, res) {
 
 /**
  * POST /api/payments/direct-upi — Record direct UPI payment (logged only).
- * @param {import('express').Request} req - Express request
- * @param {import('express').Response} res - Express response
  */
 export async function directUpiPayment(req, res) {
   const { bookingId, amount, upiId, note } = req.body;

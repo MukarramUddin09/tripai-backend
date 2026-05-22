@@ -37,16 +37,20 @@ const userSchema = new mongoose.Schema(
       trim: true,
       match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email'],
     },
+    googleId: {
+      type: String,
+      sparse: true,
+      unique: true,
+    },
     password: {
       type: String,
-      required: [true, 'Password is required'],
       minlength: 8,
       select: false,
     },
     phone: {
       type: String,
-      required: [true, 'Phone number is required'],
       trim: true,
+      default: '0000000000',
     },
     avatar: {
       type: String,
@@ -69,6 +73,10 @@ const userSchema = new mongoose.Schema(
  * Pre-save hook: hash password when modified.
  */
 userSchema.pre('save', async function (next) {
+  if (!this.password && this.googleId) return next();
+  if (!this.password) {
+    return next(new Error('Password is required for email registration'));
+  }
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(env.bcryptSaltRounds);
   this.password = await bcrypt.hash(this.password, salt);

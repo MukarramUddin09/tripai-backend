@@ -58,19 +58,15 @@ export async function getWeatherAlerts(req, res) {
 export async function subscribeAlerts(req, res) {
   const { city } = req.body;
 
-  const user = await User.findById(req.user.userId);
+  const user = await User.findByIdAndUpdate(
+    req.user.userId,
+    { $addToSet: { 'preferences.alertCities': city } },
+    { new: true, runValidators: true },
+  );
   if (!user) throw new AppError('User not found', 404);
-
-  const cities = user.preferences?.alertCities || [];
-  if (!cities.includes(city)) {
-    cities.push(city);
-    user.preferences = { ...user.preferences.toObject?.() || user.preferences, alertCities: cities };
-    user.markModified('preferences');
-    await user.save();
-  }
 
   sendSuccess(res, {
     message: `Subscribed to alerts for ${city}`,
-    data: { alertCities: cities },
+    data: { alertCities: user.preferences?.alertCities || [] },
   });
 }

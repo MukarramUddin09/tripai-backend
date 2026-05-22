@@ -25,8 +25,9 @@ const initiateSchema = Joi.object({
 
 const verifySchema = Joi.object({
   paymentId: Joi.string().hex().length(24).required(),
-  transactionId: Joi.string(),
-  status: Joi.string().valid('success', 'failed').required(),
+  razorpay_order_id: Joi.string().required(),
+  razorpay_payment_id: Joi.string().required(),
+  razorpay_signature: Joi.string().required(),
 });
 
 const invoiceSchema = Joi.object({

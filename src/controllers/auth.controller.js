@@ -3,6 +3,7 @@
  */
 
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import User from '../models/User.js';
 import { env } from '../config/env.js';
 import { AppError } from '../middlewares/errorHandler.middleware.js';
@@ -23,6 +24,60 @@ function generateToken(user) {
 }
 
 /**
+ * Resolves user role from email — admin for configured admin email.
+ * @param {string} email
+ * @returns {'admin'|'user'}
+ */
+function resolveRole(email) {
+  return email?.toLowerCase() === env.adminEmail ? 'admin' : 'user';
+}
+
+/**
+ * POST /api/auth/google — Sign in or register via Google ID token.
+ */
+export async function googleAuth(req, res) {
+  const { credential } = req.body;
+  if (!credential) throw new AppError('Google credential required', 400);
+  if (!env.googleClientId) throw new AppError('Google OAuth not configured', 503);
+
+  const client = new OAuth2Client(env.googleClientId);
+  const ticket = await client.verifyIdToken({
+    idToken: credential,
+    audience: env.googleClientId,
+  });
+  const payload = ticket.getPayload();
+  if (!payload?.email) throw new AppError('Google account email not available', 400);
+
+  const email = payload.email.toLowerCase();
+  const role = resolveRole(email);
+
+  let user = await User.findOne({ $or: [{ email }, { googleId: payload.sub }] });
+
+  if (user) {
+    user.googleId = payload.sub;
+    user.name = user.name || payload.name || email.split('@')[0];
+    user.avatar = payload.picture || user.avatar;
+    user.role = role;
+    await user.save();
+  } else {
+    user = await User.create({
+      name: payload.name || email.split('@')[0],
+      email,
+      googleId: payload.sub,
+      avatar: payload.picture,
+      role,
+      phone: '0000000000',
+    });
+  }
+
+  const token = generateToken(user);
+  sendSuccess(res, {
+    message: 'Google sign-in successful',
+    data: { token, user: user.toSafeObject() },
+  });
+}
+
+/**
  * POST /api/auth/register — Register a new user account.
  * @param {import('express').Request} req - Express request
  * @param {import('express').Response} res - Express response
@@ -35,7 +90,13 @@ export async function register(req, res) {
     throw new AppError('Email already registered', 409);
   }
 
-  const user = await User.create({ name, email, password, phone });
+  const user = await User.create({
+    name,
+    email,
+    password,
+    phone,
+    role: resolveRole(email),
+  });
   const token = generateToken(user);
 
   sendSuccess(res, {

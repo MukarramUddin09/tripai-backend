@@ -41,6 +41,10 @@ const changePasswordSchema = Joi.object({
   newPassword: Joi.string().min(8).required(),
 });
 
+const googleAuthSchema = Joi.object({
+  credential: Joi.string().required(),
+});
+
 router.post(
   '/register',
   authRateLimiter,
@@ -53,6 +57,13 @@ router.post(
   authRateLimiter,
   validate({ body: loginSchema }),
   asyncHandler(authController.login),
+);
+
+router.post(
+  '/google',
+  authRateLimiter,
+  validate({ body: googleAuthSchema }),
+  asyncHandler(authController.googleAuth),
 );
 
 router.post('/logout', authenticate, asyncHandler(authController.logout));
